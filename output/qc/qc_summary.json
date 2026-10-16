@@ -8,6 +8,20 @@
     "cells": 27,
     "genes": 290
   },
+  "steps": {
+    "after_gene_filter": {
+      "cells": 120,
+      "genes": 290
+    },
+    "after_cell_filter": {
+      "cells": 33,
+      "genes": 290
+    },
+    "after_mito_filter": {
+      "cells": 27,
+      "genes": 290
+    }
+  },
   "removed": {
     "cells": 93,
     "genes": 10

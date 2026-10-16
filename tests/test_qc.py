@@ -11,5 +11,14 @@ def test_mock_qc_writes_expected_outputs(tmp_path: Path) -> None:
     assert result["before"] == {"cells": 120, "genes": 300}
     assert result["after"]["cells"] < result["before"]["cells"]
     assert result["after"]["genes"] < result["before"]["genes"]
-    for name in ("qc_before.png", "qc_after.png", "qc_report.md", "provenance.json"):
+    assert result["steps"]["after_gene_filter"]["genes"] < 300
+    assert result["steps"]["after_cell_filter"]["cells"] <= 120
+    for name in (
+        "qc_before.png",
+        "qc_before_scatter.png",
+        "qc_after.png",
+        "qc_after_scatter.png",
+        "qc_report.md",
+        "provenance.json",
+    ):
         assert (tmp_path / "qc" / name).exists()
