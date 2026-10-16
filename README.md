@@ -95,7 +95,7 @@ REDIS_URL=redis://localhost:6379
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 BIO_LAB_JOB_DIR=output/jobs
-MAX_UPLOAD_BYTES=4294967296
+MAX_UPLOAD_SIZE_GB=5
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4.1-mini
 ```

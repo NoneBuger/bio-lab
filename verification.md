@@ -15,26 +15,21 @@
 | `CELERY_RESULT_BACKEND` | 由 `REDIS_URL` 推导 `/1` | 否 | Celery | 否 | 设置后覆盖结果 backend |
 | `CELERY_TASK_ALWAYS_EAGER` | `false` | 否 | Celery | 否 | `true` 时本地同步执行，不需要 Redis |
 | `BIO_LAB_JOB_DIR` | `output/jobs` | 否 | FastAPI / Celery | 否 | Docker 中为 `/app/output/jobs` |
-| `MAX_UPLOAD_BYTES` | `4294967296`（4 GiB） | 否 | FastAPI | 否 | 后端上传限制 |
+| `MAX_UPLOAD_SIZE_GB` | `5` | 否 | FastAPI / Streamlit | 否 | 前后端共享的人类可读上传限制 |
 | `EUROPE_PMC_URL` | `https://www.ebi.ac.uk/europepmc/webservices/rest/search` | 否 | Celery | 否 | 文献 API，可替换为测试 mock 端点 |
 | `LITERATURE_YEARS` | `5` | 否 | Celery | 否 | 文献回溯年数 |
 | `LITERATURE_MAX_RESULTS` | `10` | 否 | Celery | 否 | 文献最大返回数 |
 | `BACKEND_URL` | `http://localhost:8000` | 否 | Streamlit | 否 | Streamlit 访问 FastAPI 的地址 |
-| `MAX_UPLOAD_SIZE_GB` | `5` | 否 | Streamlit | 否 | 前端上传限制 |
 | `POLL_TIMEOUT_MINUTES` | `30` | 否 | Streamlit | 否 | 前端轮询超时 |
-| `AGENT_MAX_CODE_LENGTH` | 无读取点 | 否 | 未实现 | 否 | 当前沙盒尚未使用 |
-| `AGENT_EXECUTION_TIMEOUT` | 无读取点 | 否 | 未实现 | 否 | 当前沙盒尚未使用 |
 
 `OPENAI_API_KEY` 只应放在本地未提交的 `.env`、部署平台 Secret 或运行环境中。不要把真实 Key 写入 YAML、README 或镜像。
 
-## 已发现的问题清单
+## 本轮修复结果
 
-这些问题本次只记录，没有修改业务代码：
-
-1. Streamlit 默认限制为 5 GB（`MAX_UPLOAD_SIZE_GB`），FastAPI 默认限制为 4 GiB（`MAX_UPLOAD_BYTES`），存在前后端边界不一致。
-2. `AGENT_MAX_CODE_LENGTH` 与 `AGENT_EXECUTION_TIMEOUT` 尚未被 `backend/sandbox.py` 或其他代码读取，不能宣称它们已经提供运行时限制。
-3. `docker-compose.yml` 只显式传递 `OPENAI_API_KEY`、`OPENAI_MODEL`；`OPENAI_MODEL_ROUTER`、`OPENAI_MODEL_SUMMARY`、`EUROPE_PMC_URL`、`LITERATURE_YEARS` 和 `LITERATURE_MAX_RESULTS` 不会从 `.env` 自动进入容器。
-4. `.dockerignore` 当前忽略 `.env` 和 `.env.*`；但 `.gitignore` 当前没有忽略 `.env`，这是敏感文件保护遗漏，应在后续配置修复中补上。`.env.example` 当前未被 Git 忽略，可以提交模板。
+- FastAPI 和 Streamlit 现在共同使用 `MAX_UPLOAD_SIZE_GB`，后端在分块写入过程中超限立即返回 HTTP 413 并清理半截文件。
+- Compose API/worker 都显式传递独立模型、Europe PMC 和文献检索参数。
+- `.gitignore` 和 `.dockerignore` 都忽略 `.env`；`.env.example` 通过 Git 取反规则保留为模板。
+- `git log --all --full-history -- .env` 无输出，`.env` 从未被 Git 追踪。
 
 ## 1. 环境准备
 
@@ -134,7 +129,7 @@ Compose 当前配置检查结论：
 - Compose 默认网络同时连接三个服务，API/worker 使用服务名 `redis`。
 - API 和 worker 都使用 `depends_on.redis.condition: service_healthy`，会等待 Redis healthcheck。
 - healthcheck 使用 `redis-cli ping`，间隔 5 秒、超时 3 秒、重试 10 次，适合启动依赖。
-- `OPENAI_API_KEY` 通过 Compose 插值传入 API 和 worker，但其他文献/独立模型变量目前不会自动传入，见问题清单。
+- `OPENAI_API_KEY`、独立模型、Europe PMC 和文献参数均通过 Compose 插值传入 API 和 worker。
 
 如果失败：
 
@@ -249,9 +244,14 @@ PY
 | `Cannot connect to the Docker daemon` | Docker Desktop/daemon 未运行 | 启动 Docker，或先使用 eager 模式 |
 | `Europe PMC API unavailable` | 外网、端点或速率限制 | 检查网络和 `EUROPE_PMC_URL`，稍后重试 |
 | `未找到匹配文献` | 查询实体过宽或无结果 | 使用明确基因、细胞类型、疾病关键词 |
-| `文件超过 5GB` | Streamlit 前端大小限制 | 降采样/拆分数据，或调整 `MAX_UPLOAD_SIZE_GB` 与后端限制一致 |
+| `文件超过 5GB` / HTTP 413 | 前后端共享上传大小限制触发 | 降采样/拆分数据，或调整 `MAX_UPLOAD_SIZE_GB` |
 | `An .h5ad file is required` | 数据/综合任务未上传文件 | 上传 `.h5ad` 或选择仅文献检索 |
 | 任务一直 `PENDING` | worker 未启动或 broker 不通 | 查看 `docker compose logs worker redis` |
 | artifact `404` | 任务未完成、路径未共享或文件未生成 | 查看 `output/jobs/<task_id>/` 和 API/worker 日志 |
 | Streamlit 查询超时 | 数据过大或 worker 忙 | 查看 worker 日志，调整 `POLL_TIMEOUT_MINUTES` |
 | `ModuleNotFoundError` | 依赖未同步 | 执行 `uv sync --dev` |
+
+## 未来改进
+
+- TODO：将 `AGENT_MAX_CODE_LENGTH` 作为安全增强项加入 Agent 代码长度校验。
+- TODO：评估跨平台的 `AGENT_EXECUTION_TIMEOUT` 沙盒执行超时机制。

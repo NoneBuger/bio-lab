@@ -28,6 +28,12 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_MODEL_ROUTER: ${OPENAI_MODEL_ROUTER:-gpt-4.1-mini}
+      OPENAI_MODEL_SUMMARY: ${OPENAI_MODEL_SUMMARY:-gpt-4.1-mini}
+      EUROPE_PMC_URL: ${EUROPE_PMC_URL:-https://www.ebi.ac.uk/europepmc/webservices/rest/search}
+      LITERATURE_YEARS: ${LITERATURE_YEARS:-5}
+      LITERATURE_MAX_RESULTS: ${LITERATURE_MAX_RESULTS:-10}
+      MAX_UPLOAD_SIZE_GB: ${MAX_UPLOAD_SIZE_GB:-5}
       BIO_LAB_JOB_DIR: /app/output/jobs
     volumes:
       - ./output/jobs:/app/output/jobs
@@ -48,6 +54,12 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      OPENAI_MODEL_ROUTER: ${OPENAI_MODEL_ROUTER:-gpt-4.1-mini}
+      OPENAI_MODEL_SUMMARY: ${OPENAI_MODEL_SUMMARY:-gpt-4.1-mini}
+      EUROPE_PMC_URL: ${EUROPE_PMC_URL:-https://www.ebi.ac.uk/europepmc/webservices/rest/search}
+      LITERATURE_YEARS: ${LITERATURE_YEARS:-5}
+      LITERATURE_MAX_RESULTS: ${LITERATURE_MAX_RESULTS:-10}
+      MAX_UPLOAD_SIZE_GB: ${MAX_UPLOAD_SIZE_GB:-5}
       BIO_LAB_JOB_DIR: /app/output/jobs
     volumes:
       - ./output/jobs:/app/output/jobs

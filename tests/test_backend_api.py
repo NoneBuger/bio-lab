@@ -109,6 +109,28 @@ def test_invalid_agent_type_returns_400() -> None:
         raise AssertionError("invalid agent type should be rejected")
 
 
+def test_upload_limit_interrupts_and_removes_partial_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(backend_main, "JOB_ROOT", tmp_path)
+    monkeypatch.setattr(backend_main, "MAX_UPLOAD_BYTES", 10)
+    upload = FakeUpload("large.h5ad", b"01234567890")
+
+    try:
+        asyncio.run(
+            backend_main.submit_qc(
+                file=upload,
+                instruction="run qc",
+                agent_type="data_analyst",
+            )
+        )
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 413
+        assert "限制" in str(getattr(exc, "detail", ""))
+    else:
+        raise AssertionError("oversized upload should be rejected")
+
+    assert not list(tmp_path.rglob("*.h5ad"))
+
+
 def test_unified_task_status_matches_qc_alias(monkeypatch) -> None:
     monkeypatch.setattr(backend_main, "AsyncResult", lambda task_id, app: FakeResult())
     assert backend_main.get_task_status("task-1") == backend_main.get_qc_status("task-1")

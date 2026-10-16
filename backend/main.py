@@ -17,7 +17,9 @@ from .tasks import JOB_ROOT, run_hybrid_task, run_literature_task, run_qc_task
 
 
 app = FastAPI(title="Bio Lab API", version="0.2.0")
-MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(4 * 1024**3)))
+MAX_UPLOAD_SIZE_GB = float(os.getenv("MAX_UPLOAD_SIZE_GB", "5"))
+MAX_UPLOAD_BYTES = int(MAX_UPLOAD_SIZE_GB * 1024**3)
+MAX_CHUNK_SIZE = 1024 * 1024
 ALLOWED_ARTIFACTS = {
     "qc_report",
     "qc_summary",
@@ -78,11 +80,14 @@ async def submit_qc(
         input_path.parent.mkdir(parents=True, exist_ok=True)
         total_bytes = 0
         with input_path.open("wb") as target:
-            while chunk := await file.read(8 * 1024 * 1024):
+            while chunk := await file.read(MAX_CHUNK_SIZE):
                 total_bytes += len(chunk)
                 if total_bytes > MAX_UPLOAD_BYTES:
                     input_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail="Uploaded file is too large")
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"文件超过 {MAX_UPLOAD_SIZE_GB:g} GB 限制",
+                    )
                 target.write(chunk)
 
     kwargs = {
