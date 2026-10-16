@@ -17,5 +17,6 @@
 ## 阶段三：多智能体协作（未开始）
 
 - [x] 在项目内实现本地 `omics-scientist` QC 评估器
+- [x] 引入 FastAPI + Celery/Redis 异步 QC 执行骨架
 - [ ] 引入文献专家 Agent
 - [ ] 实现多 Agent 协作

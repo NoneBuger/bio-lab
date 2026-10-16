@@ -8,8 +8,94 @@ uv sync --dev
 uv run streamlit run app/app.py
 ```
 
-打开终端提示的本地地址，上传 `.h5ad` 后点击“运行 QC”。应用会为每次运行创建独立的 `output/streamlit_runs/<job_id>/` 目录，依次执行 Scanpy QC 和本地 `omics-scientist` QC 评估，并在页面展示图表与报告下载入口。
+打开终端提示的本地地址，上传 `.h5ad` 后点击“提交异步 QC 任务”。Streamlit 会调用 FastAPI，后端把任务交给 Celery/Redis，前端轮询任务状态并在完成后展示图表与报告下载入口。
 
 ## 部署说明
 
-仓库包含 `requirements.txt`，可用于 Streamlit Community Cloud 等从 GitHub 构建的部署环境。部署入口设置为 `app/app.py`。当前版本使用进程内执行，适合原型和单用户任务；生产环境应将 `execute_qc_job` 移到 FastAPI/Worker，并用任务队列和持久化对象存储承载长任务与结果。
+仓库包含 `requirements.txt`，可用于从 GitHub 构建的部署环境。部署入口设置为 `app/app.py`。Streamlit 前端通过 `BACKEND_URL` 连接 FastAPI；FastAPI、Celery worker、Redis 和结果存储需要部署在彼此可访问的环境中。
+
+## 本地四进程启动
+
+先安装依赖：
+
+```bash
+uv sync --dev
+```
+
+### Linux/macOS
+
+终端 1，启动 Redis：
+
+```bash
+docker run --name bio-lab-redis -p 6379:6379 -d redis:7-alpine
+```
+
+终端 2，启动 FastAPI：
+
+```bash
+uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+终端 3，启动 Celery worker：
+
+```bash
+uv run celery -A backend.celery_app.celery_app worker --loglevel=info --concurrency=1
+```
+
+终端 4，启动 Streamlit：
+
+```bash
+BACKEND_URL=http://localhost:8000 uv run streamlit run app/app.py
+```
+
+### Windows PowerShell
+
+Redis 推荐使用 Docker Desktop：
+
+```powershell
+docker run --name bio-lab-redis -p 6379:6379 -d redis:7-alpine
+```
+
+终端 2：
+
+```powershell
+uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+终端 3 使用 Celery solo pool：
+
+```powershell
+uv run celery -A backend.celery_app.celery_app worker --loglevel=info --pool=solo
+```
+
+终端 4：
+
+```powershell
+$env:BACKEND_URL="http://localhost:8000"
+uv run streamlit run app/app.py
+```
+
+FastAPI 文档地址：<http://localhost:8000/docs>。健康检查：<http://localhost:8000/health>。
+
+### 没有 Redis/Docker 时运行测试
+
+测试会使用 Celery eager 模式，不需要 Redis：
+
+```bash
+CELERY_TASK_ALWAYS_EAGER=true uv run pytest -q
+```
+
+该模式只适合测试，不适合大文件生产任务。真实异步运行时，取消这个环境变量并启动 Redis 和 Celery worker。
+
+### 关键环境变量
+
+```text
+BACKEND_URL=http://localhost:8000
+REDIS_URL=redis://localhost:6379
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+BIO_LAB_JOB_DIR=output/jobs
+MAX_UPLOAD_BYTES=4294967296
+```
+
+API 接收上传文件后先写入 `BIO_LAB_JOB_DIR/<task_id>/input/`，Celery worker 读取同一共享路径并写入 QC artifacts。多容器部署时需要把该目录换成共享卷或对象存储。
