@@ -11,7 +11,10 @@ try:
     from qc import run_qc  # Streamlit executes app/app.py from this directory.
 except ModuleNotFoundError:
     from app.qc import run_qc
-from scripts.omics_scientist_qc import assess_qc
+try:
+    from omics_scientist import assess_qc
+except ModuleNotFoundError:
+    from app.omics_scientist import assess_qc
 
 
 def execute_qc_job(
