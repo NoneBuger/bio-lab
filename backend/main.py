@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse
 
 from .celery_app import celery_app
 from .schemas import TaskStatus, TaskSubmitted
-from .tasks import JOB_ROOT, run_qc_task
+from .router import route_instruction
+from .tasks import JOB_ROOT, run_hybrid_task, run_literature_task, run_qc_task
 
 
 app = FastAPI(title="Bio Lab API", version="0.2.0")
@@ -27,6 +28,8 @@ ALLOWED_ARTIFACTS = {
     "qc_after_scatter",
     "assessment_report",
     "assessment_json",
+    "literature_report",
+    "literature_json",
 }
 
 
@@ -37,39 +40,63 @@ def health() -> dict[str, str]:
 
 @app.post("/api/v1/qc", response_model=TaskSubmitted, status_code=202)
 async def submit_qc(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(default=None),
     instruction: str = Form(default=""),
+    agent_type: str = Form(default="auto"),
     min_genes: int = Form(default=200),
     min_cells: int = Form(default=3),
     max_mito_pct: float = Form(default=20.0),
 ) -> TaskSubmitted:
-    if not file.filename or not file.filename.lower().endswith(".h5ad"):
+    # Direct unit-test calls do not pass through FastAPI's dependency
+    # conversion and therefore may receive the Form default object itself.
+    if not isinstance(instruction, str):
+        instruction = ""
+    if not isinstance(agent_type, str):
+        agent_type = "auto"
+    if not isinstance(min_genes, int):
+        min_genes = 200
+    if not isinstance(min_cells, int):
+        min_cells = 3
+    if not isinstance(max_mito_pct, (int, float)):
+        max_mito_pct = 20.0
+    try:
+        route = route_instruction(instruction, requested_agent_type=agent_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    selected_agent = route["agent_type"]
+    if selected_agent in {"data_analyst", "hybrid"} and file is None:
+        raise HTTPException(status_code=400, detail="An .h5ad file is required for this agent type")
+    if file is not None and (not file.filename or not file.filename.lower().endswith(".h5ad")):
         raise HTTPException(status_code=400, detail="Only .h5ad files are supported")
     if min_genes < 0 or min_cells < 1 or not 0 <= max_mito_pct <= 100:
         raise HTTPException(status_code=400, detail="Invalid QC parameters")
 
     task_id = str(uuid.uuid4())
-    input_path = JOB_ROOT / task_id / "input" / "sample.h5ad"
-    input_path.parent.mkdir(parents=True, exist_ok=True)
-    total_bytes = 0
-    with input_path.open("wb") as target:
-        while chunk := await file.read(8 * 1024 * 1024):
-            total_bytes += len(chunk)
-            if total_bytes > MAX_UPLOAD_BYTES:
-                input_path.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail="Uploaded file is too large")
-            target.write(chunk)
+    input_path: Path | None = None
+    if file is not None:
+        input_path = JOB_ROOT / task_id / "input" / "sample.h5ad"
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        total_bytes = 0
+        with input_path.open("wb") as target:
+            while chunk := await file.read(8 * 1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    input_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="Uploaded file is too large")
+                target.write(chunk)
 
-    run_qc_task.apply_async(
-        args=[str(input_path)],
-        kwargs={
-            "instruction": instruction,
-            "min_genes": min_genes,
-            "min_cells": min_cells,
-            "max_mito_pct": max_mito_pct,
-        },
-        task_id=task_id,
-    )
+    kwargs = {
+        "instruction": instruction,
+        "min_genes": min_genes,
+        "min_cells": min_cells,
+        "max_mito_pct": max_mito_pct,
+    }
+    if selected_agent == "literature":
+        run_literature_task.apply_async(args=[], kwargs={"instruction": instruction}, task_id=task_id)
+    elif selected_agent == "hybrid":
+        run_hybrid_task.apply_async(args=[str(input_path)], kwargs=kwargs, task_id=task_id)
+    else:
+        run_qc_task.apply_async(args=[str(input_path)], kwargs=kwargs, task_id=task_id)
     return TaskSubmitted(task_id=task_id)
 
 
@@ -80,7 +107,15 @@ def get_qc_status(task_id: str) -> TaskStatus:
     if result.successful():
         return TaskStatus(task_id=task_id, status="SUCCESS", progress=100, result=result.result)
     if result.failed():
-        return TaskStatus(task_id=task_id, status="FAILURE", progress=0, error=str(result.result))
+        failure_info = result.info if isinstance(result.info, dict) else {}
+        return TaskStatus(
+            task_id=task_id,
+            status="FAILURE",
+            progress=0,
+            stage=failure_info.get("stage"),
+            message=failure_info.get("message"),
+            error=failure_info.get("error", str(result.result)),
+        )
     return TaskStatus(
         task_id=task_id,
         status=result.state,
@@ -88,6 +123,12 @@ def get_qc_status(task_id: str) -> TaskStatus:
         stage=info.get("stage"),
         message=info.get("message"),
     )
+
+
+@app.get("/api/v1/tasks/{task_id}", response_model=TaskStatus)
+def get_task_status(task_id: str) -> TaskStatus:
+    """Unified task-status endpoint; kept equivalent to the QC alias."""
+    return get_qc_status(task_id)
 
 
 @app.get("/api/v1/qc/{task_id}/artifacts/{artifact_name}")
