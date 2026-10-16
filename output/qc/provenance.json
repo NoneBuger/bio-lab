@@ -1,0 +1,12 @@
+{
+  "created_at_utc": "2026-10-16T08:52:45.826833+00:00",
+  "python": "3.12.14",
+  "scanpy": "1.12.4",
+  "input": "data/mock.h5ad",
+  "workflow": "basic_qc",
+  "parameters": {
+    "min_genes": 200,
+    "min_cells": 3,
+    "max_mito_pct": 20.0
+  }
+}

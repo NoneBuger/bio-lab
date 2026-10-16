@@ -1,0 +1,20 @@
+{
+  "input": "data/mock.h5ad",
+  "before": {
+    "cells": 120,
+    "genes": 300
+  },
+  "after": {
+    "cells": 22,
+    "genes": 290
+  },
+  "removed": {
+    "cells": 98,
+    "genes": 10
+  },
+  "filters": {
+    "min_genes": 200,
+    "min_cells": 3,
+    "max_mito_pct": 20.0
+  }
+}

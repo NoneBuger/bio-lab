@@ -3,8 +3,9 @@
 ## 阶段一：基础设施（进行中）
 
 - [ ] 安装并验证 Scanpy Skill
-- [ ] 构建 Streamlit 文件上传原型
-- [ ] 跑通第一个端到端 QC 分析
+- [x] 建立 uv 依赖环境并验证 Scanpy
+- [x] 构建 Streamlit 文件上传原型
+- [x] 使用 `data/mock.h5ad` 跑通第一个端到端 QC 分析
 
 ## 阶段二：领域深化（未开始）
 
