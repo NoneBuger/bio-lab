@@ -2,6 +2,16 @@
 
 本文假设读者第一次接触本项目。验证分为四个阶段：先用本地 eager 模式确认代码链路，再用 Docker Compose 验证真实 Redis/Celery，最后连接 Streamlit 和真实 `.h5ad` 数据。
 
+## 环境兼容性说明
+
+`scripts/smoke_test.py` 使用 FastAPI `TestClient` 和 AnyIO blocking portal，必须在支持该运行模式的环境中执行。推荐以下三类环境：
+
+1. **本地 Python + uv**：适合开发者直接运行 `uv sync --dev` 和 smoke test，能看到最完整的本地日志。
+2. **Docker Compose**：适合验证 Redis、FastAPI、Celery worker 和共享 `output/jobs` 卷；真实异步链路应在此环境验证。
+3. **GitHub Actions CI**：适合无本地 Docker 的情况，使用 `ubuntu-latest`、Python 3.12 和 eager 模式自动执行测试与 smoke test。
+
+已知受限环境现象：某些 sandbox 禁止 AnyIO blocking portal 的线程/事件循环通信。此时即使最小 FastAPI 应用的 `TestClient(app).get("/")` 也可能卡住，不是项目路由或 Celery 代码错误。遇到这种情况不要继续用 curl 重试，也不要修改业务代码；改在本地 Python、Docker Compose 或 GitHub Actions 中运行 `scripts/smoke_test.py`。普通 pytest（尤其是 eager 模式）仍可在受限环境中运行，用于验证不依赖 TestClient 的逻辑。
+
 ## 0. 环境变量清单
 
 | 变量 | 默认值 | 必需 | 使用层级 | 敏感 | 示例/说明 |

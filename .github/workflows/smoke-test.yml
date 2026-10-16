@@ -1,0 +1,53 @@
+name: Smoke tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    env:
+      CELERY_TASK_ALWAYS_EAGER: "true"
+      OPENAI_API_KEY: sk-your-key-here
+      OPENAI_MODEL: gpt-4.1-mini
+      OPENAI_MODEL_ROUTER: gpt-4.1-mini
+      OPENAI_MODEL_SUMMARY: gpt-4.1-mini
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.17"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run test suite
+        run: uv run pytest -q
+
+      - name: Run in-process smoke test
+        env:
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+        run: timeout 180 uv run python scripts/smoke_test.py
+
+      - name: Upload job artifacts on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-job-output
+          path: output/jobs/
+          if-no-files-found: warn

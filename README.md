@@ -1,6 +1,21 @@
 # bio-lab
 bio experience analysis platform
 
+[![Smoke tests](https://github.com/NoneBuger/bio-lab/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/NoneBuger/bio-lab/actions/workflows/smoke-test.yml)
+
+## 快速开始
+
+首先运行无网络 smoke test，验证 FastAPI 路由、Celery eager 执行和任务文件落盘：
+
+```bash
+uv sync --dev
+CELERY_TASK_ALWAYS_EAGER=true \
+UV_CACHE_DIR=/tmp/bio-lab-uv-cache \
+uv run --no-sync python scripts/smoke_test.py
+```
+
+预期看到 `/health`、文献任务提交、任务终态和 `output/jobs/<task_id>/` 文件列表。该脚本不需要真实 OpenAI Key；如果当前环境的 AnyIO blocking portal 不可用，请改在本地 Python、Docker Compose 或 GitHub Actions 中运行，详见 [`verification.md`](verification.md)。
+
 ## 本地启动 Streamlit
 
 ```bash
