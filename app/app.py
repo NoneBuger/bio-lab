@@ -10,6 +10,17 @@ try:
 except ModuleNotFoundError:
     from app.api_client import get_artifact, get_qc_status, submit_qc
 
+STAGE_LABELS = {
+    "PENDING": "任务排队中",
+    "RECEIVED": "任务已进入分析队列",
+    "AI_GENERATING_CODE": "AI 正在生成分析代码",
+    "EXECUTING_ANALYSIS": "正在执行 QC 分析",
+    "ASSESSING_BATCH_EFFECT": "正在评估批次效应",
+    "FINALIZING": "正在整理分析结果",
+    "SUCCESS": "分析完成",
+    "FAILURE": "分析失败",
+}
+
 
 st.set_page_config(page_title="Bio Lab", page_icon="🧬", layout="wide")
 st.title("🧬 细胞生物学 AI 分析平台")
@@ -57,14 +68,22 @@ if task_id and "task_result" not in st.session_state:
         while True:
             status = get_qc_status(st.session_state.backend_url, task_id)
             current = int(status.get("progress", 0))
-            progress.progress(current, text=f"{status.get('stage') or status['status']}：{status.get('message') or ''}")
+            stage = status.get("stage") or status["status"]
+            progress.progress(current, text=STAGE_LABELS.get(stage, stage))
             if status["status"] == "SUCCESS":
                 st.session_state["task_result"] = status["result"]
                 break
             if status["status"] == "FAILURE":
-                status_box.error(f"任务失败：{status.get('error', 'unknown error')}")
+                error = status.get("error", "unknown error")
+                if "OPENAI_API_KEY" in error:
+                    message = "API Key 未配置，请设置 OPENAI_API_KEY。"
+                elif "安全沙盒拦截" in error:
+                    message = "AI 生成代码被安全沙盒拦截。"
+                else:
+                    message = f"任务失败：{error}"
+                status_box.error(message)
                 break
-            status_box.info(f"任务状态：{status['status']}，进度 {current}%")
+            status_box.info(f"当前阶段：{STAGE_LABELS.get(stage, stage)}（{current}%）")
             time.sleep(2)
     except Exception as exc:
         status_box.error(f"查询任务失败：{exc}")

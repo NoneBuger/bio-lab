@@ -96,9 +96,13 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 BIO_LAB_JOB_DIR=output/jobs
 MAX_UPLOAD_BYTES=4294967296
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
 API 接收上传文件后先写入 `BIO_LAB_JOB_DIR/<task_id>/input/`，Celery worker 读取同一共享路径并写入 QC artifacts。多容器部署时需要把该目录换成共享卷或对象存储。
+
+使用 Docker Compose 时，可在项目根目录创建未提交的 `.env` 文件，Compose 会将其中的 `OPENAI_API_KEY` 和 `OPENAI_MODEL` 注入 API 与 worker。不要把 `.env` 或 API Key 提交到 Git。
 
 ## Docker Compose 一键启动
 

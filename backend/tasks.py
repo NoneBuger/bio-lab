@@ -5,9 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from app.omics_scientist import assess_qc
-from app.qc import run_qc
-
+from .agent_orchestrator import orchestrate_qc
 from .celery_app import celery_app
 
 
@@ -37,21 +35,24 @@ def run_qc_task(
     """Run QC and batch-effect assessment in a worker process."""
     task_id = self.request.id
     job_dir = JOB_ROOT / task_id
-    qc_dir = job_dir / "qc"
-    assessment_dir = job_dir / "omics_scientist"
     _progress(self, 5, "RECEIVED", "任务已进入 Celery worker")
-    _progress(self, 15, "RUNNING", "开始执行 Scanpy QC")
-    summary = run_qc(
+    def report(stage: str, percent: int, message: str) -> None:
+        _progress(self, percent, stage, message)
+
+    orchestration = orchestrate_qc(
+        instruction or "完成基础单细胞 QC 并评估批次效应",
         input_path,
-        qc_dir,
+        job_dir,
         min_genes=min_genes,
         min_cells=min_cells,
         max_mito_pct=max_mito_pct,
+        progress_callback=report,
     )
-    _progress(self, 65, "QC_COMPLETED", "QC 图表和报告已生成")
-    assessment = assess_qc(input_path, assessment_dir / "qc_assessment.md")
+    summary = orchestration["summary"]
+    assessment = orchestration["assessment"]
     _progress(self, 90, "BATCH_ASSESSMENT_COMPLETED", "批次效应评估已完成")
-
+    _progress(self, 95, "FINALIZING", "正在整理分析结果")
+    """The orchestrator owns execution; artifacts are stable contract paths."""
     artifacts = {
         "qc_report": "qc/qc_report.md",
         "qc_summary": "qc/qc_summary.json",
@@ -66,6 +67,7 @@ def run_qc_task(
     return {
         "task_id": task_id,
         "instruction": instruction,
+        "generated_code": orchestration["generated_code"],
         "summary": summary,
         "assessment": assessment,
         "artifacts": artifacts,
