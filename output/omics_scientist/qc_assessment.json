@@ -1,0 +1,17 @@
+{
+  "input": "data/sample.h5ad",
+  "assessment": "not_assessable",
+  "batch_fields_found": [],
+  "selected_batch_field": null,
+  "overall": {
+    "cells": 120,
+    "qc_pass_fraction": 0.225,
+    "median_genes": 195.0,
+    "median_mito_pct": 0.298510122611919
+  },
+  "per_batch": {},
+  "recommendations": [
+    "\u672a\u53d1\u73b0\u6279\u6b21\u5143\u6570\u636e\uff0c\u5f53\u524d\u4e0d\u80fd\u53ef\u9760\u5224\u65ad\u6279\u6b21\u6548\u5e94\u3002\u8bf7\u5728 adata.obs \u4e2d\u63d0\u4f9b batch/sample/donor/library \u7b49\u5b57\u6bb5\u3002",
+    "\u8865\u5145\u6279\u6b21\u5b57\u6bb5\u540e\uff0c\u91cd\u65b0\u8fd0\u884c\u672c\u8bc4\u4f30\u5668\u5e76\u6bd4\u8f83\u5404\u6279\u6b21 QC \u6307\u6807\u53ca\u4e0b\u6e38\u805a\u7c7b\u7ed3\u6784\u3002"
+  ]
+}
