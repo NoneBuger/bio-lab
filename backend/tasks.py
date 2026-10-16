@@ -45,13 +45,16 @@ def update_stage(task: Any, stage: str, message: str) -> None:
 def _mark_failure(task: Any, stage: str, exc: Exception) -> None:
     if celery_app.conf.task_always_eager:
         return
+    message = str(exc)
+    if "OPENAI_API_KEY" in message or exc.__class__.__name__ == "AuthenticationError":
+        message = "OPENAI_API_KEY 无效或未配置"
     task.update_state(
         state="FAILURE",
         meta={
             "progress": STAGE_PROGRESS["FAILURE"],
             "stage": stage,
-            "message": str(exc),
-            "error": str(exc),
+            "message": message,
+            "error": message,
         },
     )
 
@@ -149,9 +152,13 @@ def run_qc_task(
     task_id = self.request.id
     job_dir = JOB_ROOT / task_id
     update_stage(self, "AI_GENERATING_CODE", "正在准备 QC 分析")
-    orchestration = _run_qc(
-        self, input_path, job_dir, instruction, min_genes, min_cells, max_mito_pct
-    )
+    try:
+        orchestration = _run_qc(
+            self, input_path, job_dir, instruction, min_genes, min_cells, max_mito_pct
+        )
+    except Exception as exc:  # noqa: BLE001 - preserve a useful Celery failure payload.
+        _mark_failure(self, "AI_GENERATING_CODE", exc)
+        raise
     update_stage(self, "FINALIZING", "正在整理分析结果")
     result = {
         "task_id": task_id,

@@ -28,3 +28,6 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "with_real_key: mark test to run with a simulated real OPENAI_API_KEY",
+]

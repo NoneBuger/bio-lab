@@ -13,6 +13,7 @@ from app.omics_scientist import assess_qc
 from app.qc import run_qc
 
 from .sandbox import SandboxViolation, execute_generated_code
+from .openai_utils import configured_api_key
 
 
 SYSTEM_PROMPT = """You are a conservative single-cell RNA-seq analysis orchestrator.
@@ -43,11 +44,11 @@ def _extract_code(text: str) -> str:
 
 
 def generate_code(instruction: str, client: OpenAI | None = None) -> str:
-    if not os.getenv("OPENAI_API_KEY") and client is None:
+    if client is None and configured_api_key() is None:
         raise OrchestrationError(
-            "OPENAI_API_KEY is not configured. Please set it before running AI orchestration."
+            "OPENAI_API_KEY 无效或未配置。请先配置后再运行 AI 编排。"
         )
-    client = client or OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    client = client or OpenAI(api_key=configured_api_key())
     response = client.responses.create(
         model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
         instructions=SYSTEM_PROMPT,

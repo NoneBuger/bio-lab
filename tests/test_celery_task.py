@@ -38,3 +38,33 @@ def test_celery_qc_task_runs_without_redis_in_eager_mode(tmp_path: Path, monkeyp
     assert result["summary"]["after"]["cells"] > 0
     assert (tmp_path / "jobs" / "test-task" / "qc" / "qc_report.md").exists()
     tasks.celery_app.conf.task_always_eager = False
+
+
+def test_invalid_openai_key_failure_meta_is_explicit(monkeypatch) -> None:
+    class FakeTask:
+        def __init__(self) -> None:
+            self.states = []
+
+        def update_state(self, **kwargs) -> None:
+            self.states.append(kwargs)
+
+    fake_task = FakeTask()
+    monkeypatch.setattr(tasks.celery_app.conf, "task_always_eager", False)
+
+    tasks._mark_failure(
+        fake_task,
+        "EXTRACTING_ENTITIES",
+        RuntimeError("OPENAI_API_KEY 无效或未配置"),
+    )
+
+    assert fake_task.states == [
+        {
+            "state": "FAILURE",
+            "meta": {
+                "progress": 0,
+                "stage": "EXTRACTING_ENTITIES",
+                "message": "OPENAI_API_KEY 无效或未配置",
+                "error": "OPENAI_API_KEY 无效或未配置",
+            },
+        }
+    ]

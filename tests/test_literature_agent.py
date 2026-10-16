@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 import requests
+import httpx
+from openai import AuthenticationError
 
 from backend.agents import literature_agent as agent
 
@@ -111,3 +113,36 @@ def test_query_uses_fielded_syntax_and_cleans_quotes():
     assert 'GENE:"CD8A"' in queries[0]
     assert 'CELL:"CD8 T cell"' in queries[0]
     assert queries[0].count('"') % 2 == 0
+
+
+def test_summary_without_api_key_keeps_metadata_and_adds_excerpt(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    papers = [{
+        "pmid": "123",
+        "doi": "10.1000/example",
+        "title": "A paper",
+        "authors": "Author",
+        "journal": "Cell",
+        "year": "2025",
+        "abstract": "A" * 400,
+        "abstract_status": "available",
+        "url": "https://europepmc.org/article/MED/123",
+    }]
+    result = agent.summarize_papers(papers, "summarize")
+    assert result[0]["pmid"] == "123"
+    assert result[0]["title"] == "A paper"
+    assert result[0]["summary"]["status"] == "LLM 摘要不可用：未配置 OPENAI_API_KEY"
+    assert len(result[0]["summary"]["excerpt"]) == 300
+
+
+def test_entity_authentication_error_falls_back_to_keywords():
+    class FailingResponses:
+        def create(self, **kwargs):
+            response = httpx.Response(401, request=httpx.Request("POST", "https://api.openai.com"))
+            raise AuthenticationError("invalid", response=response, body=None)
+
+    class FailingClient:
+        responses = FailingResponses()
+
+    result = agent.extract_entities("研究 TP53", client=FailingClient())
+    assert "TP53" in result["genes"]

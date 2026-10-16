@@ -10,6 +10,8 @@ from typing import Any
 
 from openai import OpenAI
 
+from .openai_utils import configured_api_key
+
 
 logger = logging.getLogger(__name__)
 VALID_AGENT_TYPES = {"auto", "data_analyst", "literature", "hybrid"}
@@ -105,8 +107,11 @@ def _parse_llm_result(text: str, instruction: str) -> dict[str, Any]:
 
 def _llm_route(instruction: str, client: OpenAI | None = None) -> dict[str, Any]:
     if client is None:
+        api_key = configured_api_key()
+        if api_key is None:
+            raise ValueError("OPENAI_API_KEY 无效或未配置")
         client = OpenAI(
-            api_key=os.environ["OPENAI_API_KEY"],
+            api_key=api_key,
             timeout=15.0,
             max_retries=0,
         )
@@ -140,7 +145,7 @@ def route_instruction(
         }
         logger.info("route_source=explicit agent_type=%s", requested_agent_type)
         return result
-    if not instruction.strip() or not os.getenv("OPENAI_API_KEY"):
+    if not instruction.strip() or (client is None and configured_api_key() is None):
         result = keyword_route(instruction)
         logger.info("route_source=keyword_fallback reason=no_instruction_or_api_key")
         return result

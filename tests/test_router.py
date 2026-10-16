@@ -73,7 +73,5 @@ def test_llm_timeout_falls_back_to_keywords(monkeypatch) -> None:
 
 def test_missing_api_key_never_calls_llm(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    client = Mock()
-    result = route_instruction("做 h5ad QC", client=client)
+    result = route_instruction("做 h5ad QC")
     assert result["source"] == "keyword_fallback"
-    client.responses.create.assert_not_called()

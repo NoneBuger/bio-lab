@@ -14,7 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CELERY_TASK_ALWAYS_EAGER: "true"
-      OPENAI_API_KEY: sk-your-key-here
+      # 置空以避免触发真实 OpenAI 请求，同时验证占位 Key 回退路径
+      OPENAI_API_KEY: ""
       OPENAI_MODEL: gpt-4.1-mini
       OPENAI_MODEL_ROUTER: gpt-4.1-mini
       OPENAI_MODEL_SUMMARY: gpt-4.1-mini

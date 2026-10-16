@@ -53,14 +53,6 @@ def _configure_environment() -> None:
     os.environ["CELERY_TASK_ALWAYS_EAGER"] = "true"
     os.environ.setdefault("BIO_LAB_JOB_DIR", str(JOB_ROOT))
 
-    # A placeholder key must not trigger a real OpenAI request. With no key,
-    # the literature agent follows its documented local entity fallback and
-    # reports external Europe PMC availability independently.
-    if os.environ.get("OPENAI_API_KEY") == "sk-your-key-here":
-        os.environ.pop("OPENAI_API_KEY")
-        print("CONFIG: placeholder OPENAI_API_KEY treated as unset")
-
-
 def _print_json(label: str, value: Any) -> None:
     print(f"{label}: {json.dumps(value, ensure_ascii=False, indent=2, default=str)}")
 
@@ -71,6 +63,11 @@ def main() -> int:
     from fastapi.testclient import TestClient
 
     from backend.main import app
+    from backend.openai_utils import is_placeholder_api_key
+
+    if is_placeholder_api_key(os.getenv("OPENAI_API_KEY")):
+        os.environ.pop("OPENAI_API_KEY", None)
+        print("CONFIG: placeholder OPENAI_API_KEY treated as unset")
 
     checks: list[tuple[str, bool]] = []
     first_error: str | None = None

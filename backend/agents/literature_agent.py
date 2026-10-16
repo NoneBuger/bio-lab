@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -12,7 +13,9 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from openai import OpenAI
+from openai import AuthenticationError, OpenAI
+
+from ..openai_utils import configured_api_key
 
 
 EUROPE_PMC_URL = os.getenv(
@@ -20,6 +23,7 @@ EUROPE_PMC_URL = os.getenv(
     "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
 )
 _SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+logger = logging.getLogger(__name__)
 
 
 class LiteratureAgentError(RuntimeError):
@@ -68,25 +72,33 @@ def extract_entities(
     client: OpenAI | None = None,
 ) -> dict[str, list[str]]:
     """Extract searchable entities, using a conservative local fallback."""
-    if client is None and not os.getenv("OPENAI_API_KEY"):
+    if client is None:
+        api_key = configured_api_key()
+    else:
+        api_key = None
+    if client is None and api_key is None:
         entities = _fallback_entities(instruction)
     else:
-        client = client or OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        response = client.responses.create(
-            model=os.getenv("OPENAI_MODEL_ROUTER", os.getenv("OPENAI_MODEL", "gpt-4.1-mini")),
-            instructions=(
-                "Extract literature search entities as JSON with exactly these arrays: "
-                "genes, cell_types, diseases, topics. Return JSON only. Do not invent entities."
-            ),
-            input=json.dumps({"instruction": instruction, "qc_context": qc_context or {}}, ensure_ascii=False),
-        )
-        value = _extract_json(response.output_text)
-        if not isinstance(value, dict):
-            raise LiteratureAgentError("Entity extraction did not return a JSON object")
-        entities = {
-            key: [_clean_term(item) for item in value.get(key, []) if _clean_term(item)]
-            for key in ("genes", "cell_types", "diseases", "topics")
-        }
+        client = client or OpenAI(api_key=api_key)
+        try:
+            response = client.responses.create(
+                model=os.getenv("OPENAI_MODEL_ROUTER", os.getenv("OPENAI_MODEL", "gpt-4.1-mini")),
+                instructions=(
+                    "Extract literature search entities as JSON with exactly these arrays: "
+                    "genes, cell_types, diseases, topics. Return JSON only. Do not invent entities."
+                ),
+                input=json.dumps({"instruction": instruction, "qc_context": qc_context or {}}, ensure_ascii=False),
+            )
+            value = _extract_json(response.output_text)
+            if not isinstance(value, dict):
+                raise LiteratureAgentError("Entity extraction did not return a JSON object")
+            entities = {
+                key: [_clean_term(item) for item in value.get(key, []) if _clean_term(item)]
+                for key in ("genes", "cell_types", "diseases", "topics")
+            }
+        except AuthenticationError:
+            logger.warning("OpenAI AuthenticationError during entity extraction; using keyword fallback")
+            entities = _fallback_entities(instruction)
 
     if qc_context:
         for key in ("genes", "cell_types", "diseases", "topics"):
@@ -166,35 +178,54 @@ def summarize_papers(
     """Summarize at most five abstracts per LLM request and preserve PMID order."""
     available = [paper for paper in papers if paper.get("abstract")]
     summaries: dict[str, dict[str, Any]] = {}
-    if available and client is None and not os.getenv("OPENAI_API_KEY"):
-        raise LiteratureAgentError(
-            "OPENAI_API_KEY is not configured. Please set it before summarizing literature."
-        )
-    client = client or OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    for start in range(0, len(available), 5):
-        batch = available[start : start + 5]
-        payload = [{"pmid": paper["pmid"], "title": paper["title"], "abstract": paper["abstract"]} for paper in batch]
-        response = client.responses.create(
-            model=_model_name(),
-            instructions=(
-                "Summarize each input paper. Return a JSON array with exactly the same "
-                "length and order as the input. Every item must contain the matching PMID, "
-                "topic, key_findings, methods, relevance, and limitations. Do not invent facts."
-            ),
-            input=json.dumps({"instruction": instruction, "papers": payload}, ensure_ascii=False),
-        )
-        values = _extract_json(response.output_text)
-        if not isinstance(values, list) or len(values) != len(batch):
-            raise LiteratureAgentError("Literature summary JSON length does not match input batch")
-        for paper, summary in zip(batch, values):
-            if not isinstance(summary, dict) or str(summary.get("pmid", "")) != paper["pmid"]:
-                raise LiteratureAgentError("Literature summary PMID order does not match input")
-            summaries[paper["pmid"]] = summary
+    def fallback_summary(paper: dict[str, Any], reason: str) -> dict[str, Any]:
+        return {
+            "status": reason if paper.get("abstract") else paper["abstract_status"],
+            "excerpt": str(paper.get("abstract") or "")[:300],
+            "topic": "",
+            "key_findings": "",
+            "methods": "",
+            "relevance": "",
+            "limitations": "",
+        }
+
+    api_key = configured_api_key() if client is None else None
+    if client is None and api_key is None:
+        return [
+            {**paper, "summary": fallback_summary(paper, "LLM 摘要不可用：未配置 OPENAI_API_KEY")}
+            for paper in papers
+        ]
+    client = client or OpenAI(api_key=api_key)
+    try:
+        for start in range(0, len(available), 5):
+            batch = available[start : start + 5]
+            payload = [{"pmid": paper["pmid"], "title": paper["title"], "abstract": paper["abstract"]} for paper in batch]
+            response = client.responses.create(
+                model=_model_name(),
+                instructions=(
+                    "Summarize each input paper. Return a JSON array with exactly the same "
+                    "length and order as the input. Every item must contain the matching PMID, "
+                    "topic, key_findings, methods, relevance, and limitations. Do not invent facts."
+                ),
+                input=json.dumps({"instruction": instruction, "papers": payload}, ensure_ascii=False),
+            )
+            values = _extract_json(response.output_text)
+            if not isinstance(values, list) or len(values) != len(batch):
+                raise LiteratureAgentError("Literature summary JSON length does not match input batch")
+            for paper, summary in zip(batch, values):
+                if not isinstance(summary, dict) or str(summary.get("pmid", "")) != paper["pmid"]:
+                    raise LiteratureAgentError("Literature summary PMID order does not match input")
+                summaries[paper["pmid"]] = summary
+    except AuthenticationError:
+        return [
+            {**paper, "summary": fallback_summary(paper, "LLM 摘要不可用：OPENAI_API_KEY 无效")}
+            for paper in papers
+        ]
 
     result = []
     for paper in papers:
         enriched = dict(paper)
-        enriched["summary"] = summaries.get(paper["pmid"], {"status": paper["abstract_status"]})
+        enriched["summary"] = summaries.get(paper["pmid"], fallback_summary(paper, "摘要不可用（abstract missing）"))
         result.append(enriched)
     return result
 
