@@ -139,17 +139,31 @@ def get_task_status(task_id: str) -> TaskStatus:
     return get_qc_status(task_id)
 
 
+@app.get("/api/v1/tasks/{task_id}/artifacts/{artifact_name}")
 @app.get("/api/v1/qc/{task_id}/artifacts/{artifact_name}")
 def get_artifact(task_id: str, artifact_name: str) -> FileResponse:
-    if artifact_name not in ALLOWED_ARTIFACTS:
-        raise HTTPException(status_code=404, detail="Artifact not found")
     result = AsyncResult(task_id, app=celery_app)
     if not result.successful() or not isinstance(result.result, dict):
         raise HTTPException(status_code=409, detail="Task has not completed")
-    relative_path = result.result.get("artifacts", {}).get(artifact_name)
+    artifacts = result.result.get("artifacts", {})
+    if not isinstance(artifacts, dict):
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    job_root = (JOB_ROOT / task_id).resolve()
+    mapped_paths = {str(value) for value in artifacts.values() if isinstance(value, str)}
+    requested_path = Path(artifact_name)
+    direct_path = (job_root / requested_path).resolve()
+    is_safe_relative = not requested_path.is_absolute() and requested_path == Path(artifact_name)
+
+    # Accept a mapped physical filename for backward compatibility, while
+    # logical names (for example, literature_report) resolve via artifacts.
+    if is_safe_relative and artifact_name in mapped_paths and direct_path.is_file():
+        relative_path = artifact_name
+    else:
+        relative_path = artifacts.get(artifact_name)
     if not relative_path:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    path = (JOB_ROOT / task_id / Path(relative_path)).resolve()
-    if JOB_ROOT.resolve() not in path.parents or not path.is_file():
+    path = (job_root / Path(relative_path)).resolve()
+    if job_root not in path.parents or not path.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found")
     return FileResponse(path)

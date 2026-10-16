@@ -3,6 +3,7 @@ from pathlib import Path
 
 import backend.main as backend_main
 import pytest
+from fastapi import HTTPException
 
 
 class FakeUpload:
@@ -134,3 +135,42 @@ def test_upload_limit_interrupts_and_removes_partial_file(monkeypatch, tmp_path:
 def test_unified_task_status_matches_qc_alias(monkeypatch) -> None:
     monkeypatch.setattr(backend_main, "AsyncResult", lambda task_id, app: FakeResult())
     assert backend_main.get_task_status("task-1") == backend_main.get_qc_status("task-1")
+
+
+class CompletedArtifactResult:
+    def __init__(self, artifacts: dict[str, str]) -> None:
+        self.result = {"artifacts": artifacts}
+
+    def successful(self) -> bool:
+        return True
+
+
+def test_artifact_logical_and_physical_names_are_supported(monkeypatch, tmp_path: Path) -> None:
+    task_id = "artifact-task"
+    report = tmp_path / task_id / "literature_report.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("# Literature report\n", encoding="utf-8")
+    artifacts = {"literature_report": "literature_report.md"}
+    monkeypatch.setattr(backend_main, "JOB_ROOT", tmp_path)
+    monkeypatch.setattr(backend_main, "AsyncResult", lambda task_id, app: CompletedArtifactResult(artifacts))
+
+    logical = backend_main.get_artifact(task_id, "literature_report")
+    physical = backend_main.get_artifact(task_id, "literature_report.md")
+
+    assert Path(logical.path).read_text(encoding="utf-8") == "# Literature report\n"
+    assert Path(physical.path).read_text(encoding="utf-8") == "# Literature report\n"
+
+
+def test_artifact_path_traversal_is_rejected(monkeypatch, tmp_path: Path) -> None:
+    task_id = "artifact-task"
+    monkeypatch.setattr(backend_main, "JOB_ROOT", tmp_path)
+    monkeypatch.setattr(
+        backend_main,
+        "AsyncResult",
+        lambda task_id, app: CompletedArtifactResult({"literature_report": "literature_report.md"}),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        backend_main.get_artifact(task_id, "../../etc/passwd")
+
+    assert exc_info.value.status_code == 404
