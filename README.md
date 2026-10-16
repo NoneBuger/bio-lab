@@ -99,3 +99,33 @@ MAX_UPLOAD_BYTES=4294967296
 ```
 
 API 接收上传文件后先写入 `BIO_LAB_JOB_DIR/<task_id>/input/`，Celery worker 读取同一共享路径并写入 QC artifacts。多容器部署时需要把该目录换成共享卷或对象存储。
+
+## Docker Compose 一键启动
+
+任务一的 Docker Compose 配置会启动 Redis、FastAPI API 和 Celery worker，并将 `output/jobs/` 挂载为 API/worker 共享目录：
+
+```bash
+docker compose up --build
+```
+
+后台启动：
+
+```bash
+docker compose up --build -d
+```
+
+查看服务日志：
+
+```bash
+docker compose logs -f api worker redis
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+如果在本地不使用 Docker 跑 Streamlit，请确保 `BACKEND_URL` 设置为 `http://localhost:8000`；如果在云端或容器网络内跑，请改为对应的服务地址。
+
+Compose 网络内的 Streamlit 如果作为额外容器运行，应使用 `BACKEND_URL=http://api:8000`；浏览器访问宿主机上的 Streamlit 时，则使用宿主机可访问的 API 地址。

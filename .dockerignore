@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.env
+.env.*
+*.log
+data/
+output/jobs/
+output/streamlit_runs/
+Dockerfile
+docker-compose.yml
