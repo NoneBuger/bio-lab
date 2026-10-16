@@ -1,15 +1,15 @@
 {
-  "input": "data/mock.h5ad",
+  "input": "data/sample.h5ad",
   "before": {
     "cells": 120,
     "genes": 300
   },
   "after": {
-    "cells": 22,
+    "cells": 27,
     "genes": 290
   },
   "removed": {
-    "cells": 98,
+    "cells": 93,
     "genes": 10
   },
   "filters": {
