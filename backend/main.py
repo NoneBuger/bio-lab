@@ -108,18 +108,21 @@ async def submit_qc(
 @app.get("/api/v1/qc/{task_id}", response_model=TaskStatus)
 def get_qc_status(task_id: str) -> TaskStatus:
     result = AsyncResult(task_id, app=celery_app)
-    info = result.info if isinstance(result.info, dict) else {}
+    raw_info = result.info
+    info = raw_info if isinstance(raw_info, dict) else {}
     if result.successful():
         return TaskStatus(task_id=task_id, status="SUCCESS", progress=100, result=result.result)
     if result.failed():
-        failure_info = result.info if isinstance(result.info, dict) else {}
+        failure_info = raw_info if isinstance(raw_info, dict) else {}
+        fallback_error = str(raw_info) if raw_info is not None else str(result.result)
+        error = failure_info.get("error", fallback_error)
         return TaskStatus(
             task_id=task_id,
             status="FAILURE",
             progress=0,
             stage=failure_info.get("stage"),
-            message=failure_info.get("message"),
-            error=failure_info.get("error", str(result.result)),
+            message=failure_info.get("message") or f"任务执行失败：{error}",
+            error=error,
         )
     return TaskStatus(
         task_id=task_id,
